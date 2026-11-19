@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Core tests
+        run: swift test --package-path Packages/BezlCore
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build app (unsigned)
+        run: |
+          xcodegen generate
+          xcodebuild -project Bezl.xcodeproj -scheme Bezl -configuration Release \
+            -destination 'platform=macOS' -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO build

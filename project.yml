@@ -1,0 +1,61 @@
+name: Bezl
+options:
+  bundleIdPrefix: io.github.shivshekhar12
+  deploymentTarget:
+    macOS: "14.2"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+packages:
+  BezlCore:
+    path: Packages/BezlCore
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MACOSX_DEPLOYMENT_TARGET: "14.2"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  Bezl:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Resources
+    dependencies:
+      - package: BezlCore
+        product: BezlCore
+    settings:
+      base:
+        PRODUCT_NAME: Bezl
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.shivshekhar12.bezl
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: App/Bezl.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+      configs:
+        Release:
+          ARCHS: "arm64 x86_64"
+          ONLY_ACTIVE_ARCH: NO
+
+schemes:
+  Bezl:
+    build:
+      targets:
+        Bezl: all
+    run:
+      config: Debug
+    archive:
+      config: Release

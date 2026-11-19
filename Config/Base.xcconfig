@@ -1,0 +1,14 @@
+// Shared build settings. Code signing defaults to ad-hoc ("-") so anyone can build.
+//
+// Ad-hoc signatures change on every build, which makes macOS forget granted permissions
+// (system audio, automation). To keep them across rebuilds, create the git-ignored file
+// Config/Signing.local.xcconfig with your own identity, for example:
+//
+//   CODE_SIGN_IDENTITY = Apple Development
+//   DEVELOPMENT_TEAM = ABCDE12345
+//
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"
