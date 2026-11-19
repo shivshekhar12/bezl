@@ -5,32 +5,77 @@ import UniformTypeIdentifiers
 
 struct MenuPanel: View {
     @Bindable var model: AppModel
+    /// Hosted in the Settings window (expanded sections, no Quit shortcut clash).
+    var inWindow = false
     @State private var selectedDisplay: String = "all"
     @State private var newPresetName = ""
     @State private var showDiagnostics = false
     @State private var showDisplay = false
+    @State private var showBehavior = false
+    @State private var showUpdates = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
+        VStack(alignment: .leading, spacing: inWindow ? 20 : 14) {
+            if inWindow { card { header } } else { header }
             if model.settings.isActive {
-                Divider()
+                separator
                 colorSection
-                Divider()
+                separator
                 motionSection
-                Divider()
+                separator
                 shapeSection
-                Divider()
+                separator
                 displaySection
+                separator
+                behaviorSection
             }
-            Divider()
+            separator
             permissions
             footer
         }
-        .padding(16)
-        .frame(width: 320)
-        .toggleStyle(.switch)
+        .padding(inWindow ? 14 : 16)
+        .tint(accent)
+        .frame(width: inWindow ? nil : 320)
+        .frame(maxWidth: inWindow ? .infinity : nil, alignment: .leading)
+        .onAppear { if inWindow { showDisplay = true; showBehavior = true; showUpdates = true } }
+        .toggleStyle(RowToggleStyle())
         .controlSize(.small)
+        .font(.bezlCaption)
+    }
+
+    // MARK: Grouping (glass style in the player, plain in the menu bar)
+
+    /// Hairline between sections in the compact menu bar panel; cards replace it in the player.
+    @ViewBuilder private var separator: some View {
+        if !inWindow { Divider() }
+    }
+
+    /// Album color for switches and sliders (system accent when the art is gray or absent).
+    private var accent: Color {
+        if let p = model.nowPlaying.palette, !p.isNeutral, model.settings.look.colorSource == .albumArt {
+            return Color(.sRGB, red: p.primary.r, green: p.primary.g, blue: p.primary.b)
+        }
+        return Color(.sRGB, red: model.settings.look.primary.r, green: model.settings.look.primary.g,
+                     blue: model.settings.look.primary.b)
+    }
+
+    /// A titled group: a rounded inset card on glass (System Settings style) in the player,
+    /// a plain titled block in the menu bar.
+    @ViewBuilder
+    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: inWindow ? 8 : 14) {
+            sectionTitle(title)
+                .padding(.leading, inWindow ? 6 : 0)
+            if inWindow { card(content: content) } else { content() }
+        }
+    }
+
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) { content() }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.07)))
     }
 
     // MARK: Header
@@ -41,15 +86,32 @@ struct MenuPanel: View {
                            album: model.settings.look.colorSource == .albumArt ? model.nowPlaying.palette : nil)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Bezl").font(.headline)
+                Text("Bezl").font(.bezlHeadline)
                 Text(model.statusLine)
-                    .font(.caption)
+                    .font(.bezlCaption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             Spacer()
+            if !inWindow {
+            Button {
+                model.togglePlayer()
+            } label: {
+                Image(systemName: "play.rectangle")
+            }
+            .buttonStyle(.borderless)
+            .help("Open the player")
+            Button {
+                model.togglePlayerFullScreen()
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.borderless)
+            .help("Full screen stage mode: black except the bezel glow and the player")
+            }
             Toggle("On", isOn: $model.settings.isActive)
+                .toggleStyle(.switch)
                 .labelsHidden()
                 .help("Turn Bezl on or off (⌃⌥⌘L)")
         }
@@ -58,7 +120,7 @@ struct MenuPanel: View {
     // MARK: Color
 
     private var colorSection: some View {
-        Section {
+        group("Color") {
             Picker("Color", selection: $model.settings.look.colorSource) {
                 Text("Album art").tag(ColorSource.albumArt)
                 Text("My colors").tag(ColorSource.manual)
@@ -66,32 +128,35 @@ struct MenuPanel: View {
             .pickerStyle(.segmented)
             .labelsHidden()
 
-            HStack(spacing: 12) {
-                ColorPicker("Primary", selection: colorBinding(\.primary), supportsOpacity: false)
-                ColorPicker("Secondary", selection: colorBinding(\.secondary), supportsOpacity: false)
+            row("Colors") {
+                HStack(spacing: 8) {
+                    ColorPicker("Primary", selection: colorBinding(\.primary), supportsOpacity: false)
+                        .labelsHidden().help("Primary color")
+                    ColorPicker("Secondary", selection: colorBinding(\.secondary), supportsOpacity: false)
+                        .labelsHidden().help("Secondary color")
+                }
             }
-            .font(.caption)
             labeledSlider("Balance", value: $model.settings.look.primaryWeight, in: 0.1...0.9,
                           display: { "\(Int(($0 * 100).rounded())) / \(Int(((1 - $0) * 100).rounded()))" })
             labeledSlider("Drift", value: $model.settings.look.rotationSpeed, in: 0...6,
                           display: { $0 < 0.05 ? "Off" : String(format: "%.1f rpm", $0) })
             if model.settings.look.colorSource == .albumArt {
-                Text(model.nowPlaying.track == nil
-                     ? "Plays from Music or Spotify set the colors. Until then, your colors are used."
-                     : "Colors follow the album art. These are the fallback colors.")
-                    .font(.caption2)
+                Text(liveAlbumPalette != nil
+                     ? "Showing the colors from the album art. Pick a color to use your own instead."
+                     : model.nowPlaying.track == nil
+                        ? "Play something in Music or Spotify to use its album colors. Until then, these are used."
+                        : "This album is black and white, so these colors are used instead.")
+                    .font(.bezlCaption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        } header: {
-            sectionTitle("Color")
         }
     }
 
     // MARK: Motion
 
     private var motionSection: some View {
-        Section {
+        group("Motion") {
             Picker("Motion", selection: $model.settings.look.motion) {
                 Text("Beat").tag(AnimationMode.beat)
                 Text("Breathe").tag(AnimationMode.breathe)
@@ -101,31 +166,26 @@ struct MenuPanel: View {
             .labelsHidden()
             if model.settings.look.motion == .beat {
                 Toggle("Music sync", isOn: $model.settings.musicSync)
-                    .font(.caption)
                 labeledSlider("Beat strength", value: $model.settings.look.beatStrength, in: 0...1, display: percent)
                     .disabled(!model.settings.musicSync)
             }
-        } header: {
-            sectionTitle("Motion")
         }
     }
 
     // MARK: Shape
 
     private var shapeSection: some View {
-        Section {
+        group("Shape") {
             labeledSlider("Thickness", value: $model.settings.look.thickness, in: 1...40,
                           display: { String(format: "%.0f pt", $0) })
             labeledSlider("Glow", value: $model.settings.look.glow, in: 0...1, display: percent)
             labeledSlider("Brightness", value: $model.settings.look.intensity, in: 0.05...1, display: percent)
-            presetsMenu
-        } header: {
-            sectionTitle("Shape")
+            row("Presets") { presetsMenu }
         }
     }
 
     private var presetsMenu: some View {
-        Menu("Presets") {
+        Menu("Choose…") {
             ForEach(model.allPresets) { preset in
                 Button(preset.name) { model.applyPreset(preset) }
             }
@@ -141,33 +201,32 @@ struct MenuPanel: View {
                 }
             }
         }
-        .font(.caption)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .font(.bezlCaption)
     }
 
     // MARK: Displays
 
     private var displaySection: some View {
-        DisclosureGroup(isExpanded: $showDisplay) {
-          VStack(alignment: .leading, spacing: 10) {
+        CollapsibleSection(title: "Display", isExpanded: $showDisplay, carded: inWindow) {
             if model.displays.count > 1 {
-                Picker("Display", selection: $selectedDisplay) {
-                    ForEach(model.displays) { d in Text(d.name).tag(d.id) }
+                row("Display") {
+                    Picker("Display", selection: $selectedDisplay) {
+                        ForEach(model.displays) { d in Text(d.name).tag(d.id) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .font(.caption)
             }
             if let display = currentDisplay {
                 Toggle("Light this display", isOn: displayBinding(display.id, \.enabled))
-                    .font(.caption)
                 if display.hasNotch {
                     Toggle("Follow the notch", isOn: displayBinding(display.id, \.followNotch))
-                        .font(.caption)
                 }
-                HStack {
-                    Toggle("Custom corners", isOn: Binding(
-                        get: { model.displaySettings(display.id).cornerRadius != nil },
-                        set: { on in model.updateDisplay(display.id) { $0.cornerRadius = on ? 10 : nil } }))
-                        .font(.caption)
-                }
+                Toggle("Custom corners", isOn: Binding(
+                    get: { model.displaySettings(display.id).cornerRadius != nil },
+                    set: { on in model.updateDisplay(display.id) { $0.cornerRadius = on ? 10 : nil } }))
                 if model.displaySettings(display.id).cornerRadius != nil {
                     labeledSlider("Corner radius", value: Binding(
                         get: { model.displaySettings(display.id).cornerRadius ?? 0 },
@@ -175,13 +234,6 @@ struct MenuPanel: View {
                                   in: 0...40, display: { String(format: "%.0f pt", $0) })
                 }
             }
-            Toggle("Hide in full-screen apps", isOn: $model.settings.hideInFullScreen).font(.caption)
-            Toggle("Hide from screenshots & sharing", isOn: $model.settings.hideFromScreenCapture).font(.caption)
-            Toggle("Launch at login", isOn: $model.launchAtLogin).font(.caption)
-          }
-          .padding(.top, 8)
-        } label: {
-            sectionTitle("Display & Behavior")
         }
         .onAppear {
             if !model.displays.contains(where: { $0.id == selectedDisplay }) {
@@ -189,6 +241,17 @@ struct MenuPanel: View {
                     model.displays.contains { $0.id == id } ? id : nil
                 } ?? model.displays.first?.id ?? "all"
             }
+        }
+    }
+
+    private var behaviorSection: some View {
+        CollapsibleSection(title: "Behavior", isExpanded: $showBehavior, carded: inWindow) {
+            Toggle("Hide in full-screen apps", isOn: $model.settings.hideInFullScreen)
+            Toggle("Hide from screenshots & sharing", isOn: $model.settings.hideFromScreenCapture)
+            Toggle("Launch at login", isOn: $model.launchAtLogin)
+            Toggle("Show in Dock", isOn: $model.settings.showInDock)
+            Toggle("Lock screen player (beta)", isOn: $model.settings.lockScreenPlayer)
+                .help("Keeps the glow and a mini player above the lock screen when macOS allows it.")
         }
     }
 
@@ -223,37 +286,70 @@ struct MenuPanel: View {
     private func permissionRow(_ text: String, button: String, action: @escaping () -> Void) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text(text).font(.caption).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.bezlCaption).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
-            Button(button, action: action).font(.caption)
+            Button(button, action: action).font(.bezlCaption)
         }
     }
 
     // MARK: Footer
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            DisclosureGroup("Diagnostics", isExpanded: $showDiagnostics) {
+        VStack(alignment: .leading, spacing: inWindow ? 20 : 14) {
+            CollapsibleSection(title: "Updates", isExpanded: $showUpdates, carded: inWindow) {
+                row("Version \(model.updates.currentVersion)") {
+                    Button("Check Now") { model.checkForUpdates() }
+                        .disabled(model.updates.status == .checking)
+                }
+                Toggle("Check automatically", isOn: $model.settings.checkForUpdatesAutomatically)
+                if !model.updates.statusText.isEmpty {
+                    row(model.updates.statusText, secondary: true) {
+                        if case let .available(_, url) = model.updates.status {
+                            Button("Download") { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                }
+                Text("Checks GitHub Releases. Nothing is downloaded automatically.")
+                    .font(.bezlCaption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            separator
+            CollapsibleSection(title: "Diagnostics", isExpanded: $showDiagnostics, carded: inWindow) {
                 DiagnosticsView(model: model)
             }
-            .font(.caption)
+            separator
             HStack {
                 Button("About Bezl") {
                     NSApp.activate(ignoringOtherApps: true)
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
                 Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-                    .keyboardShortcut("q")
+                Button("Quit Bezl") { NSApp.terminate(nil) }
+                    .keyboardShortcut(inWindow ? nil : KeyboardShortcut("q"))
             }
-            .font(.caption)
+            .font(.bezlCaption)
         }
     }
 
     // MARK: Helpers
 
     private func sectionTitle(_ s: String) -> some View {
-        Text(s.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+        Text(s.uppercased()).font(.bezlCaption2.weight(.semibold)).foregroundStyle(.secondary)
+    }
+
+    /// A label on the left and a control aligned to the right edge, like a settings table row.
+    private func row<Control: View>(_ title: String, secondary: Bool = false,
+                                    @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .foregroundStyle(secondary ? .secondary : .primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            control()
+        }
+        .font(.bezlCaption)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func percent(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
@@ -266,21 +362,43 @@ struct MenuPanel: View {
                 Spacer()
                 Text(display(value.wrappedValue)).monospacedDigit().foregroundStyle(.secondary)
             }
-            .font(.caption)
+            .font(.bezlCaption)
             Slider(value: value, in: range).labelsHidden()
         }
     }
 
+    /// The album's palette when it's the one lighting the rim (album mode, colorful art).
+    private var liveAlbumPalette: Palette? {
+        guard model.settings.look.colorSource == .albumArt,
+              let p = model.nowPlaying.palette, !p.isNeutral else { return nil }
+        return p
+    }
+
+    /// Color wells show whatever is lighting the rim: the album's colors in album mode,
+    /// your own otherwise. Picking a color while following the album switches to "My colors",
+    /// starting from the album's palette so the other color doesn't jump.
     private func colorBinding(_ keyPath: WritableKeyPath<LookSettings, RGB>) -> Binding<Color> {
         Binding(
             get: {
-                let c = model.settings.look[keyPath: keyPath]
+                let c: RGB
+                if let album = liveAlbumPalette {
+                    c = keyPath == \.primary ? album.primary : album.secondary
+                } else {
+                    c = model.settings.look[keyPath: keyPath]
+                }
                 return Color(.sRGB, red: c.r, green: c.g, blue: c.b)
             },
             set: { color in
                 guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return }
-                model.settings.look[keyPath: keyPath] = RGB(r: Double(ns.redComponent), g: Double(ns.greenComponent),
-                                                            b: Double(ns.blueComponent))
+                let picked = RGB(r: Double(ns.redComponent), g: Double(ns.greenComponent), b: Double(ns.blueComponent))
+                var look = model.settings.look
+                if let album = liveAlbumPalette {
+                    look.primary = album.primary
+                    look.secondary = album.secondary
+                    look.colorSource = .manual
+                }
+                look[keyPath: keyPath] = picked
+                model.settings.look = look
             })
     }
 
@@ -360,7 +478,7 @@ struct DiagnosticsView: View {
                             .lineLimit(1)
                     }
                 }
-                .font(.caption2.monospacedDigit())
+                .font(.bezlCaption2.monospacedDigit())
                 .foregroundStyle(.secondary)
             }
             .padding(.top, 4)
@@ -369,7 +487,7 @@ struct DiagnosticsView: View {
 
     private func meter(_ label: String, _ v: Double) -> some View {
         HStack {
-            Text(label).font(.caption2).frame(width: 36, alignment: .leading)
+            Text(label).font(.bezlCaption2).frame(width: 36, alignment: .leading)
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.2))
@@ -377,6 +495,70 @@ struct DiagnosticsView: View {
                 }
             }
             .frame(height: 5)
+        }
+    }
+}
+
+
+/// Settings-table toggle: label on the left, switch right-aligned, full row width.
+struct RowToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.label
+                .font(.bezlCaption)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Toggle("", isOn: configuration.$isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+}
+
+/// A section whose header matches the static ones (COLOR, MOTION…) but can collapse.
+/// Content is not indented, so its rows line up with every other section.
+struct CollapsibleSection<Content: View>: View {
+    let title: String
+    @Binding var isExpanded: Bool
+    /// Glass-style inset card around the content (used in the player's settings drawer).
+    var carded = false
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: carded ? 8 : 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text(title.uppercased())
+                        .font(.bezlCaption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.bezlCaption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .padding(.horizontal, carded ? 6 : 0)
+            if isExpanded {
+                if carded {
+                    VStack(alignment: .leading, spacing: 12) { content() }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white.opacity(0.06)))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.07)))
+                } else {
+                    content()
+                }
+            }
         }
     }
 }

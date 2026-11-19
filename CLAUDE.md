@@ -100,6 +100,48 @@ Sources: the homepage, /privacy (updated July 27, 2026), and /terms, read Novemb
 - [ ] Phase 4: Beat detection + animation. DSP ✓ (36 tests pass). Measured pulsing on real music: edge brightness in rapid screenshots swings 0.31–0.44, vs 0.06 with Bezl off. **Still needs the user's feel check** of the tuning.
 - [x] Phase 5: Now playing + album-art colors. Verified with Spotify: the rim takes the album colors. Black-and-white art (`Palette.isNeutral`) falls back to the manual colors, because a gray rim is nearly invisible. Apple Music is not yet checked.
 - [ ] Phase 6: Polish. Code ✓ for notch toggle, per-display settings, full-screen hiding, screen-capture hiding, presets, ⌃⌥⌘L hotkey, launch at login, sleep/low-power handling, Reduce Motion, onboarding. **Not done:** measuring the §3.2 budget, rebindable hotkey.
+- [x] Phase 6b: Lumn-parity extras (2026-11-19).
+  - **Verified on screen:**
+    - The **now-playing window** (`PlayerView`, AppKit-hosted via `HostedWindow`) has artwork, live position, the ±15 s/prev/play/next controls and a toolbar.
+    - The **Settings window**.
+  - **Built:** **synced lyrics** from LRCLIB (opt-in consent dialog; `SyncedLyrics` parser is tested). The API format was verified with a public song; the in-app flow still needs a click-through.
+  - **Built:** **Show in Dock** (activation policy; a Dock click opens the player), and an **update checker** (GitHub Releases; off by default; `SemanticVersion` tested).
+  - **Untested:** the **lock-screen player** (experimental). It raises the overlays and a glass card to `CGShieldingWindowLevel()+1` on `com.apple.screenIsLocked`. A person needs to test it by locking the screen; macOS may keep the lock UI on top.
+  - **Verified:** the **resizable player** (min 380×560). A `Metrics` struct scales artwork, type and controls from the 440×700 design size.
+  - **Verified: stage mode** (native full screen on the player window, ⌃⌘F / F / Esc). The background is pure black, so only the bezel glow and the centered, scaled-up player remain. The overlay shows on the full-screen Space because of `.fullScreenAuxiliary`.   - **Verified: stage layout v2** (`stageLayout` in `PlayerView`):
+    - The artwork is **centered on the screen**. The lower half holds the title plus one wide **Liquid Glass** control panel: progress row, transport, a lyrics toggle and an exit button.
+    - The panel uses `.glassEffect` on macOS 26 and `.ultraThinMaterial` earlier, via `View.bezlGlass(_:tint:)`, tinted by the album color.
+    - Secondary toggles and Settings sit in a glass pill in the top-right corner. Don't put them under the panel: centering the artwork leaves no room there.
+    - With lyrics on, the artwork column takes the left half and the synced lyrics the right half. **Synced lyrics verified end-to-end** with real Spotify playback.
+    - The windowed player keeps its original layout.
+    - **Idle fade (verified):**
+      - After 3 s with no input (`IdleTracker`: a local `NSEvent` monitor; the player window has `acceptsMouseMovedEvents`), stage mode fades out the title, the glass controls and the toolbar (`fadesWhenIdle`), and hides the cursor.
+      - Only the artwork, the lyrics (if on) and the bezel glow stay.
+      - Any mouse or key input wakes it.
+      - It never fades while the settings drawer is open.
+    - **Glass transparency:** stage controls use the `.clear` Liquid Glass variant with a 6% album tint (`bezlGlass(_:tint:clear: true)`), per user feedback that `.regular` was too opaque.
+  - **Verified: settings in the player.** The player's **Settings** button opens an in-app drawer (`settingsDrawer` in `PlayerView`, state in `AppModel.playerSettingsOpen`), so you can edit settings in stage mode without leaving it. Esc or clicking outside closes it. In windows at least 732 pt wide (player minimum 380 + drawer 352), the drawer sits **beside** the player and the player reflows. Narrower windows overlay and dim it. The **menu bar panel is unchanged**.
+  - **Typeface: Figtree** (SIL OFL), bundled as `Resources/Fonts/Figtree.ttf` with its license and registered at launch (`BezlFont.register()`). Use `Font.bezl(size, weight)` and `.bezlCaption`/`.bezlHeadline`/etc., never `.system`/`.caption`, in Bezl's own UI. Spotify's typeface (Spotify Mix/Circular) is proprietary and **must not** be bundled; Figtree is the closest free match.
+  - **Window safety (`HostedWindow`):** `isRestorable = false`, and `keepOnScreen` clamps the frame to the visible area on every show and after leaving full screen. **Bug fixed 2026-11-19:** quitting while the player was full screen let macOS restore it as a screen-sized window with its title bar under the menu bar ("stuck"). The reopen handler now opens the player only when "Show in Dock" is on, because `open` also sends a reopen event.
+  - **Glass design rules for the in-player settings drawer** (verified 2026-11-19):
+    - It's a **floating** Liquid Glass card: 360 pt wide, 30 pt corners, 16 pt inset from the edges, with a shadow. It is never an edge-to-edge slab.
+    - Sections are inset rounded **cards** (`group(_:)` / `CollapsibleSection(carded:)`, white 6% fill, 18 pt corners), with no dividers.
+    - Controls take the **album color** as the accent (`.tint(accent)`), not system blue.
+    - The menu bar panel keeps the compact divider style (`inWindow == false`).
+    - **Drawer placement (`DrawerLayout`):** the card is positioned in a full-window `GeometryReader` that ignores the safe area, so the title bar and notch strip are included in the measurements.
+      - **Wide window:** 16 pt margins on the top, right and bottom. The card may rise into the transparent title bar.
+      - **Narrow window** (where it overlays and dims the player): centered horizontally. If it would cover the traffic lights, the top and bottom margins become 40 pt.
+      - **Full screen:** the notch strip plus 16 pt, top and bottom.
+    - **Vertical centering in full screen:** on notched Macs, full-screen content starts below the camera-housing strip. The drawer's bottom margin therefore adds `NSScreen.main.safeAreaInsets.top`. `GeometryReader.safeAreaInsets` reports 0 there, so don't rely on it. Verify by measuring edge pixels in a screenshot.
+  - **Stage controls size:** the panel is ≈1.2× the artwork width (max 50% of the screen). Transport buttons are 17/21/30 pt.
+  - **Settings table layout (`MenuPanel`):**
+    - Every toggle uses `RowToggleStyle`: label left, switch right-aligned, full width.
+    - Non-toggle controls use the `row(_:control:)` helper, the same label-and-control layout.
+    - Collapsible groups use `CollapsibleSection`: the same uppercase header as COLOR/MOTION/SHAPE, a chevron, and no indent.
+    - Sections are COLOR, MOTION, SHAPE, DISPLAY, BEHAVIOR, UPDATES and DIAGNOSTICS.
+    - The panel is 320 pt in the menu bar and fills the width in the drawer.
+    - Keep new settings in these patterns so the table stays aligned. `AppModel.showSettings()`, a separate window, is no longer used by the player. It leaves stage mode first if called.
+  - **Dev flags:** `open Bezl.app --args --player`, `--settings`, `--stage` or `--player-settings` (the player with its drawer open) opens those windows on launch, which lets you test without clicking.
 - [ ] Phase 7: Screen-color mode (optional). Not started. `ColorSource` has no `.screen` case yet.
 - [ ] Phase 8: Packaging. README ✓, CI workflow ✓, app icon ✓ (`scripts/make-icon.swift`). **Not done:** release script, notarization, Sparkle, Homebrew cask, CONTRIBUTING/SECURITY.
 

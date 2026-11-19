@@ -12,7 +12,7 @@ struct OnboardingView: View {
                 GradientSwatch(primary: model.settings.look.primary, secondary: model.settings.look.secondary)
                     .frame(width: 44, height: 44)
                 VStack(alignment: .leading) {
-                    Text("Welcome to Bezl").font(.title2.bold())
+                    Text("Welcome to Bezl").font(.bezlTitle2.bold())
                     Text("Ambient light around your screen that moves with your music.")
                         .foregroundStyle(.secondary)
                 }
@@ -36,10 +36,10 @@ struct OnboardingView: View {
 
     private func step(icon: String, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon).font(.title3).frame(width: 26).foregroundStyle(.tint)
+            Image(systemName: icon).font(.bezlTitle3).frame(width: 26).foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.bezlHeadline)
+                Text(detail).font(.bezlCallout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }

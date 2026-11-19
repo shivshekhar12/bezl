@@ -71,6 +71,7 @@ final class OverlayManager {
                 entry.window.sharingType = settings.hideFromScreenCapture ? .none : .readOnly
             } else {
                 let window = OverlayWindow(screen: screen)
+                if lockScreenLevel { window.level = LockScreenController.level }
                 let view = GlowView(frame: NSRect(origin: .zero, size: screen.frame.size), context: context,
                                     lighting: lighting, geometry: geometry, followNotch: ds.followNotch)
                 view.autoresizingMask = NSView.AutoresizingMask([.width, .height])
@@ -107,6 +108,17 @@ final class OverlayManager {
         view.enableSetNeedsDisplay = !on
         view.isPaused = !on
         if !on { view.needsDisplay = true }
+    }
+
+    /// EXPERIMENTAL: lift the glow above the lock screen's shield while locked.
+    private var lockScreenLevel = false
+    func setLockScreenMode(_ on: Bool) {
+        guard on != lockScreenLevel else { return }
+        lockScreenLevel = on
+        for entry in entries.values {
+            entry.window.level = on ? LockScreenController.level : .screenSaver
+            if !hidden { entry.window.orderFrontRegardless() }
+        }
     }
 
     /// Hides every overlay (screens asleep, full-screen app, etc.) without destroying windows.

@@ -2,6 +2,7 @@ import AppKit
 import BezlCore
 import Observation
 import os
+import SwiftUI
 
 private let log = Logger(subsystem: "io.github.shivshekhar12.bezl", category: "app")
 
@@ -28,6 +29,18 @@ final class AppModel {
     }
 
     let nowPlaying = NowPlayingService()
+    let lyrics = LyricsService()
+    let updates = UpdateChecker()
+    /// The player window is open (keeps track info and position polling alive).
+    private(set) var playerVisible = false
+    /// The player is in full-screen "stage" mode: black except the glowing bezel and the player.
+    private(set) var playerFullScreen = false
+    /// The player's in-app settings drawer is open.
+    var playerSettingsOpen = false
+    /// The lyrics pane is showing (fetch lyrics for the current track).
+    var lyricsVisible = false {
+        didSet { if lyricsVisible != oldValue { syncLyrics() } }
+    }
     @ObservationIgnored let lighting = LightingController()
     @ObservationIgnored private(set) var analyzer: AudioAnalyzer!
     @ObservationIgnored private var tap: SystemAudioTap!
@@ -38,6 +51,23 @@ final class AppModel {
     @ObservationIgnored private var screensAsleep = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private let defaults = UserDefaults.standard
+    @ObservationIgnored private var lockScreen: LockScreenController?
+    @ObservationIgnored private lazy var playerWindow: HostedWindow = {
+        let w = HostedWindow(title: "Bezl", size: NSSize(width: 440, height: 700), minSize: NSSize(width: 380, height: 560),
+                             style: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                             allowsFullScreen: true, autosaveName: "BezlPlayer") { [unowned self] in
+            AnyView(PlayerView(model: self))
+        }
+        w.onVisibilityChange = { [weak self] visible in self?.playerVisibilityChanged(visible) }
+        w.onFullScreenChange = { [weak self] on in self?.playerFullScreen = on }
+        return w
+    }()
+    @ObservationIgnored private lazy var settingsWindow = HostedWindow(
+        title: "Bezl Settings", size: NSSize(width: 352, height: 720),
+        style: [.titled, .closable, .miniaturizable], autosaveName: "BezlSettings"
+    ) { [unowned self] in
+        AnyView(ScrollView { MenuPanel(model: self, inWindow: true) }.frame(width: 352))
+    }
 
     init() {
         settings = defaults.data(forKey: BezlSettings.storageKey).flatMap(BezlSettings.decode) ?? BezlSettings()
@@ -63,10 +93,18 @@ final class AppModel {
         lighting.onAnimationNeedChanged = { [weak self] on in self?.overlays.setAnimating(on) }
         lighting.onRedrawNeeded = { [weak self] in self?.overlays.setNeedsDisplay() }
         nowPlaying.onPaletteChange = { [weak self] palette in self?.lighting.update(albumPalette: palette) }
+        lockScreen = LockScreenController(model: self)
+        lockScreen?.onLockChange = { [weak self] locked in
+            guard let self else { return }
+            self.overlays.setLockScreenMode(locked && self.settings.lockScreenPlayer)
+        }
+        observeTrackForLyrics()
 
         hotkey = GlobalHotkey { [weak self] in self?.settings.isActive.toggle() }
         observeSystem()
         apply(previous: nil)
+        applyDockPolicy()
+        checkForUpdatesIfDue()
 
         healthTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkAudioHealth() }
@@ -87,7 +125,8 @@ final class AppModel {
     }
 
     private var wantsNowPlaying: Bool {
-        settings.isActive && settings.look.colorSource == .albumArt && !screensAsleep
+        (settings.isActive && settings.look.colorSource == .albumArt && !screensAsleep)
+            || playerVisible || settings.lockScreenPlayer
     }
 
     private func apply(previous: BezlSettings?) {
@@ -116,6 +155,79 @@ final class AppModel {
         if wantsNowPlaying { nowPlaying.start() } else { nowPlaying.stop() }
 
         if previous?.hideInFullScreen != settings.hideInFullScreen { updateFullScreenHiding() }
+        if previous?.showInDock != settings.showInDock { applyDockPolicy() }
+        if previous?.lockScreenPlayer != settings.lockScreenPlayer {
+            lockScreen?.settingChanged()
+            overlays.setLockScreenMode((lockScreen?.isLocked ?? false) && settings.lockScreenPlayer)
+        }
+        if previous?.checkForUpdatesAutomatically == false && settings.checkForUpdatesAutomatically {
+            checkForUpdatesIfDue()
+        }
+    }
+
+    // MARK: - Windows
+
+    func showPlayer() { playerWindow.show() }
+    func togglePlayer() { playerWindow.toggle() }
+    func showSettings() {
+        // A normal window can't appear over a full-screen Space; leave stage mode first.
+        if playerFullScreen { playerWindow.toggleFullScreen() }
+        settingsWindow.show()
+    }
+    func togglePlayerFullScreen() { playerWindow.toggleFullScreen() }
+
+    private func playerVisibilityChanged(_ visible: Bool) {
+        guard visible != playerVisible else { return }
+        playerVisible = visible
+        nowPlaying.wantsPosition = visible
+        if !visible { lyricsVisible = false }
+        apply(previous: settings)
+        if visible { nowPlaying.refresh() }
+    }
+
+    /// Dock icon on/off. With LSUIElement set, the app starts as an accessory (menu bar only).
+    private func applyDockPolicy() {
+        let policy: NSApplication.ActivationPolicy = settings.showInDock ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // Switching to accessory hides our windows' app; bring an open window back.
+        if policy == .accessory && (playerWindow.isVisible || settingsWindow.isVisible) {
+            DispatchQueue.main.async { NSApp.activate(ignoringOtherApps: true) }
+        }
+    }
+
+    // MARK: - Lyrics
+
+    private func observeTrackForLyrics() {
+        withObservationTracking {
+            _ = nowPlaying.track?.cacheKey
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.syncLyrics()
+                self?.observeTrackForLyrics()
+            }
+        }
+    }
+
+    private func syncLyrics() {
+        if lyricsVisible && settings.lyricsConsent {
+            lyrics.load(for: nowPlaying.track)
+        }
+    }
+
+    // MARK: - Updates
+
+    func checkForUpdates() {
+        Task {
+            await updates.check()
+            settings.lastUpdateCheck = Date()
+        }
+    }
+
+    private func checkForUpdatesIfDue() {
+        guard settings.checkForUpdatesAutomatically else { return }
+        if let last = settings.lastUpdateCheck, Date().timeIntervalSince(last) < 24 * 3600 { return }
+        checkForUpdates()
     }
 
     // MARK: - Presets

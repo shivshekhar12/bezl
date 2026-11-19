@@ -8,6 +8,8 @@
 - **Motion modes:** Beat, Breathe or Still.
 - **Notch aware:** the rim follows around the camera housing on MacBooks. Each display has its own settings.
 - **Presets:** four built-in looks. Save your own and share them as `.bezl.json` files.
+- **Now-playing window:** big artwork, playback controls (±15 s, previous, play/pause, next), a progress bar, and **synced lyrics**. The toolbar has quick toggles. Open it from the menu bar, or from the Dock if "Show in Dock" is on.
+- **Lock-screen player (experimental):** keeps the glow and a mini now-playing card above the lock screen, where macOS allows it.
 - **Stays out of the way:** clicks pass through and focus never moves to Bezl. It can hide in full-screen apps and from screenshots or screen sharing. Turn it on or off from anywhere with ⌃⌥⌘L.
 
 > Inspired by paid apps like Lumn. Bezl is an independent, from-scratch implementation under the MIT license.
@@ -47,7 +49,13 @@ Bezl asks for two permissions, and each one is optional:
 | **System Audio Recording** | To find the beat in what your Mac is playing. It uses a Core Audio process tap, which **never touches the microphone**. Audio is analyzed in memory and thrown away immediately. Nothing is recorded or saved. | The glow doesn't pulse. Breathe and Still still work. |
 | **Automation → Music / Spotify** | To read the current track's artwork for colors. Bezl only talks to these apps while they're already running. It never launches them. | Your manual colors are used. |
 
-Bezl has no analytics, accounts or license keys. The only network request it makes is downloading Spotify's cover image, because Spotify gives out a link to the artwork rather than the image itself. That request sends nothing about you.
+Bezl has no analytics, accounts or license keys. It makes only these network requests:
+
+| Request | When | What's sent |
+|---|---|---|
+| Spotify cover image (`i.scdn.co`) | A Spotify track changes | Nothing about you. Spotify gives out a link to the artwork rather than the image itself. |
+| Lyrics from [LRCLIB](https://lrclib.net) | Only after you open Lyrics **and agree** | The song's title, artist, album and length |
+| GitHub Releases | Only when you click "Check for Updates…", or turn on "Check automatically" (off by default) | Nothing beyond a standard request |
 
 The audio tap only runs while Beat mode and Music sync are both on. In Breathe or Still mode, or with sync off, Bezl doesn't capture audio at all.
 
@@ -73,4 +81,4 @@ Issues and pull requests are welcome. [`CLAUDE.md`](CLAUDE.md) has the full desi
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The bundled [Figtree](https://github.com/erikdkennedy/figtree) typeface is © The Figtree Project Authors, under the [SIL Open Font License 1.1](Resources/Fonts/Figtree-OFL.txt).

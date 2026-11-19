@@ -94,6 +94,15 @@ public struct BezlSettings: Codable, Sendable, Equatable {
     public var hideFromScreenCapture: Bool = false
     public var hideInFullScreen: Bool = false
     public var hasCompletedOnboarding: Bool = false
+    /// Show a Dock icon (regular app) instead of living only in the menu bar.
+    public var showInDock: Bool = false
+    /// Experimental: keep the glow and a mini player visible over the lock screen.
+    public var lockScreenPlayer: Bool = false
+    /// Check GitHub Releases for a newer version once a day. Off by default (network request).
+    public var checkForUpdatesAutomatically: Bool = false
+    public var lastUpdateCheck: Date?
+    /// The user agreed to send track title + artist to LRCLIB to fetch lyrics.
+    public var lyricsConsent: Bool = false
 
     public init() {}
 
@@ -107,6 +116,12 @@ public struct BezlSettings: Codable, Sendable, Equatable {
         hideFromScreenCapture = try c.decodeIfPresent(Bool.self, forKey: .hideFromScreenCapture) ?? d.hideFromScreenCapture
         hideInFullScreen = try c.decodeIfPresent(Bool.self, forKey: .hideInFullScreen) ?? d.hideInFullScreen
         hasCompletedOnboarding = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? d.hasCompletedOnboarding
+        showInDock = try c.decodeIfPresent(Bool.self, forKey: .showInDock) ?? d.showInDock
+        lockScreenPlayer = try c.decodeIfPresent(Bool.self, forKey: .lockScreenPlayer) ?? d.lockScreenPlayer
+        checkForUpdatesAutomatically = try c.decodeIfPresent(Bool.self, forKey: .checkForUpdatesAutomatically)
+            ?? d.checkForUpdatesAutomatically
+        lastUpdateCheck = try c.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
+        lyricsConsent = try c.decodeIfPresent(Bool.self, forKey: .lyricsConsent) ?? d.lyricsConsent
     }
 
     public func display(_ id: String) -> DisplaySettings {
