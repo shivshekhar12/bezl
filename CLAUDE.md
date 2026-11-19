@@ -434,6 +434,20 @@ Sections, top to bottom:
 
 ---
 
+### 3.2b Release process
+- **Cut a release:** `scripts/release.sh X.Y.Z`. It refuses unless you're on a clean `main` that's in sync with origin. It then:
+  1. Bumps `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml` and runs the tests.
+  2. Builds the DMG with `scripts/make-dmg.sh`.
+  3. Commits `Release vX.Y.Z`, tags it, pushes, and publishes the GitHub Release (notes = commits since the last tag, plus install steps and SHA-256).
+  - **Dry run:** `scripts/release.sh X.Y.Z --dry-run` builds and prints the notes without committing or publishing.
+- **Signing today:** ad-hoc, so users click "Open Anyway" once.
+- **To ship notarized builds (one-time, maintainer only):**
+  1. Enroll in the Apple Developer Program ($99/yr) with the maintainer's Apple ID.
+  2. In Xcode → Settings → Accounts → Manage Certificates, add a **Developer ID Application** certificate.
+  3. Create an app-specific password at appleid.apple.com. Then run `xcrun notarytool store-credentials bezl --apple-id <id> --team-id <TEAMID>`, which stores it in the keychain. Never commit it.
+  4. Release with `BEZL_SIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)" BEZL_NOTARY_PROFILE=bezl scripts/release.sh X.Y.Z`. `make-dmg.sh` then signs with a timestamp, notarizes, staples and checks with `spctl`.
+  - A Developer ID signature necessarily shows the account holder's name. That is expected for notarized apps.
+
 ### 3.3 Known pitfalls
 - `tell application "X"` **launches** X. Always check that it's running first.
 - AppleScript calls are synchronous and can hang for seconds if the target app is busy. Run them off the main thread with a timeout (`with timeout of 2 seconds`).

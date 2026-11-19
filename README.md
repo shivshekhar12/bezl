@@ -39,7 +39,7 @@ xcodebuild -project Bezl.xcodeproj -scheme Bezl -configuration Release -derivedD
 open build/DerivedData/Build/Products/Release/Bezl.app
 ```
 
-Or open `Bezl.xcodeproj` in Xcode and press Run. To build the installer yourself: `scripts/make-dmg.sh` (universal, ad-hoc signed, debug symbols stripped).
+Or open `Bezl.xcodeproj` in Xcode and press Run. To build the installer yourself, run `scripts/make-dmg.sh` (universal, ad-hoc signed, debug symbols stripped). Maintainers cut releases with `scripts/release.sh X.Y.Z`.
 
 To stop macOS from asking for permission again after every rebuild, sign with your own development certificate. Create `Config/Signing.local.xcconfig` (it's git-ignored):
 
