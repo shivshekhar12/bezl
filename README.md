@@ -21,7 +21,15 @@
 
 ## Install
 
-Releases are not published yet. Build it from source:
+1. Download **`Bezl-<version>.dmg`** from [Releases](https://github.com/shivshekhar12/bezl/releases).
+2. Open it and drag **Bezl** into **Applications**.
+3. **First launch only:** Bezl isn't notarized by Apple yet, so macOS says it "can't be opened" or "can't verify the developer". Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Bezl. Or run this once in Terminal:
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Bezl.app
+   ```
+4. Bezl appears in the menu bar. Allow system-audio access when asked.
+
+### Build from source
 
 ```sh
 brew install xcodegen
@@ -31,7 +39,7 @@ xcodebuild -project Bezl.xcodeproj -scheme Bezl -configuration Release -derivedD
 open build/DerivedData/Build/Products/Release/Bezl.app
 ```
 
-Or open `Bezl.xcodeproj` in Xcode and press Run.
+Or open `Bezl.xcodeproj` in Xcode and press Run. To build the installer yourself: `scripts/make-dmg.sh` (universal, ad-hoc signed, debug symbols stripped).
 
 To stop macOS from asking for permission again after every rebuild, sign with your own development certificate. Create `Config/Signing.local.xcconfig` (it's git-ignored):
 

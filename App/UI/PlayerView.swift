@@ -7,7 +7,11 @@ import SwiftUI
 /// pure black so only the glowing bezel and the centered player remain.
 struct PlayerView: View {
     @Bindable var model: AppModel
-    @State private var showLyrics = false
+    /// Lyrics pane on/off (lives in the model so tests and other views can drive it).
+    private var showLyrics: Bool {
+        get { model.playerLyricsOpen }
+        nonmutating set { model.playerLyricsOpen = newValue }
+    }
     @State private var askLyricsConsent = false
     /// Full-screen chrome fades out after a few seconds without input.
     @State private var idle = IdleTracker()
@@ -18,8 +22,8 @@ struct PlayerView: View {
     }
 
     private var nowPlaying: NowPlayingService { model.nowPlaying }
-    /// In stage mode, hide everything but the artwork and lyrics while the user is idle.
-    private var chromeHidden: Bool { stage && idle.isIdle && !showSettings }
+    /// Hide everything but the artwork and lyrics while the user is idle (window and full screen).
+    private var chromeHidden: Bool { idle.isIdle && !showSettings }
     private var stage: Bool { model.playerFullScreen }
     private var palette: Palette {
         model.nowPlaying.palette.flatMap { $0.isNeutral ? nil : $0 }
@@ -55,34 +59,49 @@ struct PlayerView: View {
                     stageLayout(size: playerSize)
                         .frame(width: playerSize.width, height: playerSize.height)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                } else if Self.isWide(playerSize) {
+                    wideLayout(size: playerSize)
+                        .frame(width: playerSize.width, height: playerSize.height)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .animation(.spring(response: 0.45, dampingFraction: 0.88), value: showLyrics)
                 } else {
                     VStack(spacing: 18 * m.scale) {
                         Spacer(minLength: 28)
                         if let track = nowPlaying.track {
                             if showLyrics {
                                 compactHeader(track, m)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
                                 LyricsPane(model: model, scale: m.scale)
                                     .frame(maxHeight: .infinity)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                             } else {
                                 ArtworkView(data: nowPlaying.artworkData, glow: palette.primary, cornerRadius: 18 * m.scale)
                                     .frame(width: m.art, height: m.art)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                                 titles(track, m)
+                                    .fadesWhenIdle(chromeHidden)
+                                    .transition(.opacity)
                             }
                             ProgressRow(nowPlaying: nowPlaying)
                                 .frame(maxWidth: min(m.art + 60, m.contentWidth - 48))
+                                .fadesWhenIdle(chromeHidden)
                             controls(track, m)
+                                .fadesWhenIdle(chromeHidden)
                             lyricsButton(m)
+                                .fadesWhenIdle(chromeHidden)
                         } else {
                             emptyState(m)
                         }
                         Spacer(minLength: 8)
                         toolbar(m)
                             .padding(.bottom, 18 * m.scale)
+                            .fadesWhenIdle(chromeHidden)
                     }
                     .frame(maxWidth: m.contentWidth)
                     .padding(.horizontal, 20)
                     .frame(width: playerSize.width)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.spring(response: 0.45, dampingFraction: 0.88), value: showLyrics)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -109,13 +128,115 @@ struct PlayerView: View {
         .onChange(of: showLyrics) { _, on in
             model.lyricsVisible = on
         }
-        .onDisappear { model.lyricsVisible = false }
+        .onDisappear {
+            model.lyricsVisible = false
+            idle.stop()
+        }
+        .onAppear {
+            idle.hidesCursor = stage
+            idle.start()
+        }
+        .onChange(of: stage) { _, on in
+            idle.hidesCursor = on
+            idle.poke()
+        }
+        // Pointer movement over the window wakes it even when Bezl isn't the active app.
+        .onContinuousHover { _ in idle.poke() }
         .background {
             // Keyboard: F toggles stage mode (Esc and ⌃⌘F also work, via macOS).
             Button("") { model.togglePlayerFullScreen() }
                 .keyboardShortcut("f", modifiers: [])
                 .opacity(0)
                 .accessibilityHidden(true)
+        }
+    }
+
+    // MARK: Wide window layout
+
+    /// Landscape windows split in half: artwork on the left, text on the right.
+    static func isWide(_ size: CGSize) -> Bool {
+        size.width >= 720 && size.width >= size.height * 1.15
+    }
+
+    /// Two halves. Lyrics off: artwork | title, artist, progress, controls.
+    /// Lyrics on: artwork with title and controls | synced lyrics.
+    @ViewBuilder
+    private func wideLayout(size: CGSize) -> some View {
+        let s = min(max(min(size.width / 900, size.height / 560), 0.8), 1.7)
+        let toolbarHeight = 74 * min(s, 1.4)
+        let usableHeight = size.height - toolbarHeight - 40
+        let half = size.width / 2
+        let art = max(160, min(half * 0.78, usableHeight * (showLyrics ? 0.62 : 0.86)))
+
+        VStack(spacing: 0) {
+            Spacer(minLength: 34)   // clear the title bar
+            if let track = nowPlaying.track {
+                HStack(spacing: 0) {
+                    // Left half: artwork (plus title and controls when lyrics take the right half).
+                    VStack(spacing: 16 * s) {
+                        ArtworkView(data: nowPlaying.artworkData, glow: palette.primary, cornerRadius: 18 * s)
+                            .frame(width: art, height: art)
+                        if showLyrics {
+                            VStack(spacing: 3 * s) {
+                                Text(track.title).font(.bezl(19 * s, .bold)).lineLimit(1)
+                                Text(track.artist).font(.bezl(14 * s)).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .frame(maxWidth: half * 0.85)
+                            .fadesWhenIdle(chromeHidden)
+                            .transition(.opacity)
+                            ProgressRow(nowPlaying: nowPlaying)
+                                .frame(maxWidth: min(art + 40, half * 0.85))
+                                .fadesWhenIdle(chromeHidden)
+                                .transition(.opacity)
+                            controls(track, Metrics(size: CGSize(width: 440 * s * 0.85, height: 700 * s * 0.85), stage: false))
+                                .fadesWhenIdle(chromeHidden)
+                                .transition(.opacity)
+                        }
+                    }
+                    .frame(width: half)
+
+                    // Right half: lyrics, or the track info and controls.
+                    Group {
+                        if showLyrics {
+                            LyricsPane(model: model, scale: 1.1 * s)
+                                .frame(width: half * 0.9, height: usableHeight)
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        } else {
+                            VStack(alignment: .leading, spacing: 18 * s) {
+                                VStack(alignment: .leading, spacing: 6 * s) {
+                                    Text(track.title)
+                                        .font(.bezl(30 * s, .bold))
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(track.artist)
+                                        .font(.bezl(19 * s))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    if !track.album.isEmpty {
+                                        Text(track.album)
+                                            .font(.bezl(14 * s))
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                ProgressRow(nowPlaying: nowPlaying)
+                                controls(track, Metrics(size: CGSize(width: 440 * s, height: 700 * s), stage: false))
+                                lyricsButton(Metrics(size: CGSize(width: 440 * s, height: 700 * s), stage: false))
+                            }
+                            .frame(maxWidth: min(half * 0.8, 520 * s), alignment: .leading)
+                            .fadesWhenIdle(chromeHidden)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                    }
+                    .frame(width: half)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                emptyState(Metrics(size: size, stage: false))
+            }
+            toolbar(Metrics(size: CGSize(width: 440 * s, height: 700 * s), stage: false))
+                .padding(.bottom, 18)
+                .fadesWhenIdle(chromeHidden)
         }
     }
 
@@ -184,8 +305,6 @@ struct PlayerView: View {
             .padding(.trailing, 26 * s)
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.86), value: showLyrics)
-        .onAppear { idle.start() }
-        .onDisappear { idle.stop() }
     }
 
     /// One wide glass panel: progress on top, transport in the middle, lyrics toggle at the side.
@@ -606,6 +725,26 @@ struct LyricsPane: View {
     var scale: CGFloat = 1
 
     var body: some View {
+        content
+            .id(stateKey)   // new identity per state, so each state fades in rather than popping
+            .transition(.opacity.combined(with: .offset(y: 12)))
+            .animation(.easeOut(duration: 0.45), value: stateKey)
+    }
+
+    private var stateKey: String {
+        switch model.lyrics.state {
+        case .idle: "idle"
+        case .loading: "loading"
+        case .synced: "synced"
+        case .plain: "plain"
+        case .instrumental: "instrumental"
+        case .notFound: "notFound"
+        case .failed: "failed"
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch model.lyrics.state {
         case .idle, .loading:
             ProgressView().controlSize(.small).frame(maxHeight: .infinity)

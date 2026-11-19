@@ -35,6 +35,8 @@ final class AppModel {
     private(set) var playerVisible = false
     /// The player is in full-screen "stage" mode: black except the glowing bezel and the player.
     private(set) var playerFullScreen = false
+    /// The player's lyrics pane is open.
+    var playerLyricsOpen = false
     /// The player's in-app settings drawer is open.
     var playerSettingsOpen = false
     /// The lyrics pane is showing (fetch lyrics for the current track).
@@ -182,7 +184,7 @@ final class AppModel {
         nowPlaying.wantsPosition = visible
         if !visible { lyricsVisible = false }
         apply(previous: settings)
-        if visible { nowPlaying.refresh() }
+        if visible { nowPlaying.refresh(); syncLyrics() }
     }
 
     /// Dock icon on/off. With LSUIElement set, the app starts as an accessory (menu bar only).
@@ -209,8 +211,10 @@ final class AppModel {
         }
     }
 
+    /// Fetch lyrics while the player is open (after consent), not only once the pane is shown,
+    /// so toggling Lyrics slides in finished text instead of a spinner that pops into text.
     private func syncLyrics() {
-        if lyricsVisible && settings.lyricsConsent {
+        if (lyricsVisible || playerVisible) && settings.lyricsConsent {
             lyrics.load(for: nowPlaying.track)
         }
     }

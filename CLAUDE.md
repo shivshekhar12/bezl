@@ -119,6 +119,7 @@ Sources: the homepage, /privacy (updated July 27, 2026), and /terms, read Novemb
       - Only the artwork, the lyrics (if on) and the bezel glow stay.
       - Any mouse or key input wakes it.
       - It never fades while the settings drawer is open.
+      - **It also applies in windowed mode, verified for both the stacked and the wide split layout.** In a window the cursor is not hidden (`IdleTracker.hidesCursor` is true only in stage mode), and `.onContinuousHover` wakes the player even when Bezl isn't the active app.
     - **Glass transparency:** stage controls use the `.clear` Liquid Glass variant with a 6% album tint (`bezlGlass(_:tint:clear: true)`), per user feedback that `.regular` was too opaque.
   - **Verified: settings in the player.** The player's **Settings** button opens an in-app drawer (`settingsDrawer` in `PlayerView`, state in `AppModel.playerSettingsOpen`), so you can edit settings in stage mode without leaving it. Esc or clicking outside closes it. In windows at least 732 pt wide (player minimum 380 + drawer 352), the drawer sits **beside** the player and the player reflows. Narrower windows overlay and dim it. The **menu bar panel is unchanged**.
   - **Typeface: Figtree** (SIL OFL), bundled as `Resources/Fonts/Figtree.ttf` with its license and registered at launch (`BezlFont.register()`). Use `Font.bezl(size, weight)` and `.bezlCaption`/`.bezlHeadline`/etc., never `.system`/`.caption`, in Bezl's own UI. Spotify's typeface (Spotify Mix/Circular) is proprietary and **must not** be bundled; Figtree is the closest free match.
@@ -141,9 +142,24 @@ Sources: the homepage, /privacy (updated July 27, 2026), and /terms, read Novemb
     - Sections are COLOR, MOTION, SHAPE, DISPLAY, BEHAVIOR, UPDATES and DIAGNOSTICS.
     - The panel is 320 pt in the menu bar and fills the width in the drawer.
     - Keep new settings in these patterns so the table stays aligned. `AppModel.showSettings()`, a separate window, is no longer used by the player. It leaves stage mode first if called.
-  - **Dev flags:** `open Bezl.app --args --player`, `--settings`, `--stage` or `--player-settings` (the player with its drawer open) opens those windows on launch, which lets you test without clicking.
+  - **Wide window split (`wideLayout`, `PlayerView.isWide`):** when the width is at least 720 pt and at least 1.15× the height:
+    - **Lyrics off:** artwork on the left half; title, artist, album, progress, controls and the Lyrics button large on the right.
+    - **Lyrics on:** artwork, title and controls on the left; synced lyrics on the right.
+    - The lyrics-off variant is verified. The lyrics-on variant still needs a look.
+  - **Lyrics transition (verified with a screenshot burst):**
+    - Lyrics are **prefetched** whenever the player is open and consent was given, so the pane slides in with finished text.
+    - `LyricsPane` fades between states (`.id(stateKey)` plus an opacity/offset transition).
+    - The windowed player animates the toggle with a spring.
+    - Lyrics state lives in `AppModel.playerLyricsOpen`.
+  - **Dev flags:** `--toggle-lyrics` flips lyrics every 4 s, for transition testing. **Always relaunch Bezl without flags after testing**: the maintainer uses the running app, and a leftover `--toggle-lyrics` kept flipping their lyrics. `open Bezl.app --args --player`, `--settings`, `--stage` or `--player-settings` (the player with its drawer open) opens those windows on launch, which lets you test without clicking.
 - [ ] Phase 7: Screen-color mode (optional). Not started. `ColorSource` has no `.screen` case yet.
-- [ ] Phase 8: Packaging. README ✓, CI workflow ✓, app icon ✓ (`scripts/make-icon.swift`). **Not done:** release script, notarization, Sparkle, Homebrew cask, CONTRIBUTING/SECURITY.
+- [ ] Phase 8: Packaging.
+  - **Done:** README ✓, CI workflow ✓, app icon ✓ (`scripts/make-icon.swift`).
+  - **DMG installer ✓** (`scripts/make-dmg.sh`):
+    - Universal arm64 + x86_64, ad-hoc signed with hardened runtime and entitlements.
+    - Debug symbols are **stripped**: they contained absolute build paths with the builder's username. The script refuses to package if `$HOME` still appears in the binary.
+    - It is never signed with a personal Apple Development certificate, which embeds the owner's name and email.
+  - **Not done:** Developer ID signing + notarization (needs a paid account; until then users must "Open Anyway"), Sparkle, Homebrew cask, CONTRIBUTING/SECURITY.
 
 **Deviations from the plan (deliberate):**
 - **The shader is compiled at runtime** from `App/Overlay/GlowShader.swift` (`makeLibrary(source:)`), not from a `.metal` file. Xcode 27 needs a separate Metal Toolchain download to compile `.metal` files, and this keeps building from source a one-step job. Contributors should keep it that way.

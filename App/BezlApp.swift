@@ -36,6 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if args.contains("--player") { model.showPlayer() }
         if args.contains("--settings") { model.showSettings() }
         if args.contains("--stage") { model.togglePlayerFullScreen() }
+        if args.contains("--toggle-lyrics") {
+            // Test hook: flip lyrics every 4 s to check the transition.
+            Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.model.playerLyricsOpen.toggle() }
+            }
+        }
         if args.contains("--player-settings") { model.playerSettingsOpen = true; model.showPlayer() }
     }
 

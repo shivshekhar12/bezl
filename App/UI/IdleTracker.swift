@@ -8,6 +8,10 @@ import Observation
 final class IdleTracker {
     private(set) var isIdle = false
     var delay: TimeInterval = 3
+    /// Hide the pointer while idle (full screen only; in a window you may be using another app).
+    var hidesCursor = false {
+        didSet { if !hidesCursor { NSCursor.setHiddenUntilMouseMoves(false) } }
+    }
 
     @ObservationIgnored private var monitor: Any?
     @ObservationIgnored private var timer: Timer?
@@ -46,6 +50,6 @@ final class IdleTracker {
     private func goIdle() {
         guard monitor != nil else { return }
         isIdle = true
-        NSCursor.setHiddenUntilMouseMoves(true)
+        if hidesCursor { NSCursor.setHiddenUntilMouseMoves(true) }
     }
 }
